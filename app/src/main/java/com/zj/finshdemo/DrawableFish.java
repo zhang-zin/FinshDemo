@@ -1,5 +1,6 @@
 package com.zj.finshdemo;
 
+import android.animation.ValueAnimator;
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
 import android.graphics.Paint;
@@ -7,6 +8,7 @@ import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.graphics.PointF;
 import android.graphics.drawable.Drawable;
+import android.view.animation.LinearInterpolator;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -25,11 +27,14 @@ public class DrawableFish extends Drawable {
     /* 鱼的数据 start */
     //鱼的重心
     private PointF middlePoint;
+    //鱼头的圆心
+    private PointF headPoint;
 
     //鱼的朝向
     private float fishMainAngle = 0;
+
     //鱼头半径
-    private float headRadius = 100;
+    private float headRadius = 80;
     //鱼的身体长度
     private float bodyLength = 3.2f * headRadius;
     //寻找鱼鳍起始坐标的线长
@@ -49,6 +54,12 @@ public class DrawableFish extends Drawable {
     // --寻找大三角形底边中心点的线长
     private final float findTriangleLength = middleCircleRadius * 2.7f;
 
+    private float frequence = 1f;
+    private float currentValue;
+
+    // 鱼鳍的变化值
+    private float finsValue = 0;
+
     public DrawableFish() {
         init();
     }
@@ -63,6 +74,20 @@ public class DrawableFish extends Drawable {
 
         middlePoint = new PointF(4.19f * headRadius, 4.19f * headRadius);
 
+        ValueAnimator valueAnimator = ValueAnimator.ofFloat(0, 3600f);
+        valueAnimator.setDuration(15 * 1000);
+        valueAnimator.setRepeatMode(ValueAnimator.RESTART);
+        valueAnimator.setRepeatCount(ValueAnimator.INFINITE);
+        valueAnimator.setInterpolator(new LinearInterpolator());
+        valueAnimator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+            @Override
+            public void onAnimationUpdate(ValueAnimator animation) {
+                currentValue = (float) animation.getAnimatedValue();
+
+                invalidateSelf();
+            }
+        });
+        valueAnimator.start();
     }
 
     @Override
@@ -92,12 +117,13 @@ public class DrawableFish extends Drawable {
 
     @Override
     public void draw(@NonNull Canvas canvas) {
-        float fishAngle = fishMainAngle;
+//        float fishAngle = fishMainAngle;
+        float fishAngle = (float) (fishMainAngle + Math.sin(Math.toRadians(currentValue * 1.2 * frequence)) * 10);
         mPaint.setStrokeWidth(10);
         canvas.drawPoint(middlePoint.x, middlePoint.y, mPaint);
 
         // 鱼头的圆心坐标
-        PointF headPoint = calculatePoint(middlePoint, bodyLength / 2, fishAngle);
+        headPoint = calculatePoint(middlePoint, bodyLength / 2, fishAngle);
         canvas.drawCircle(headPoint.x, headPoint.y, headRadius, mPaint);
         canvas.drawPoint(headPoint.x, headPoint.y, mPaint);
 
@@ -117,8 +143,11 @@ public class DrawableFish extends Drawable {
         // 绘制节肢2
         makeSegment(canvas, middleCenterPoint, middleCircleRadius, smallCircleRadius,
                 findSmallCircleLength, fishAngle, false);
+
+        float findEdgeLength = (float) Math.abs(Math.sin(Math.toRadians(currentValue * 1.5 * frequence)) * bigCircleRadius);
+
         // 尾巴
-        makeTail(canvas, middleCenterPoint, findTriangleLength, bigCircleRadius, fishAngle);
+        makeTail(canvas, middleCenterPoint, findTriangleLength, findEdgeLength, fishAngle);
         makeTail(canvas, middleCenterPoint, findTriangleLength - 10,
                 bigCircleRadius - 20, fishAngle);
 
@@ -156,6 +185,8 @@ public class DrawableFish extends Drawable {
      */
     private void makeTail(Canvas canvas, PointF startPoint, float findCenterLength,
                           float findEdgeLength, float fishAngle) {
+        float triangelAngle = (float) (fishAngle + Math.sin(Math.toRadians(currentValue * 1.5 * frequence)) * 35);
+
         // 三角形底边的中心坐标
         PointF centerPoint = calculatePoint(startPoint, findCenterLength, fishAngle - 180);
         // 三角形底边两点
@@ -178,14 +209,24 @@ public class DrawableFish extends Drawable {
      */
     private PointF makeSegment(Canvas canvas, PointF bottomCenterPoint, float bigRadius, float smallRadius,
                                float findSmallCircleLength, float fishAngle, boolean hasBigCircle) {
+
+        float segmentAngle;
+        if (hasBigCircle) {
+            // 节肢1
+            segmentAngle = (float) (fishAngle + Math.cos(Math.toRadians(currentValue * 1.5 * frequence)) * 15);
+        } else {
+            // 节肢2
+            segmentAngle = (float) (fishAngle + Math.sin(Math.toRadians(currentValue * 1.5 * frequence)) * 35);
+        }
+
         // 梯形上底圆的圆心
         PointF upperCenterPoint = calculatePoint(bottomCenterPoint, findSmallCircleLength,
                 fishAngle - 180);
         // 梯形的四个点
-        PointF bottomLeftPoint = calculatePoint(bottomCenterPoint, bigRadius, fishAngle + 90);
-        PointF bottomRightPoint = calculatePoint(bottomCenterPoint, bigRadius, fishAngle - 90);
-        PointF upperLeftPoint = calculatePoint(upperCenterPoint, smallRadius, fishAngle + 90);
-        PointF upperRightPoint = calculatePoint(upperCenterPoint, smallRadius, fishAngle - 90);
+        PointF bottomLeftPoint = calculatePoint(bottomCenterPoint, bigRadius, segmentAngle + 90);
+        PointF bottomRightPoint = calculatePoint(bottomCenterPoint, bigRadius, segmentAngle - 90);
+        PointF upperLeftPoint = calculatePoint(upperCenterPoint, smallRadius, segmentAngle + 90);
+        PointF upperRightPoint = calculatePoint(upperCenterPoint, smallRadius, segmentAngle - 90);
 
         if (hasBigCircle) {
             // 绘制大圆
@@ -213,11 +254,21 @@ public class DrawableFish extends Drawable {
      * @param isRight    是否为右鱼鳍
      */
     private void makeFins(Canvas canvas, PointF startPoint, float fishAngle, boolean isRight) {
+        float controlAngle = 115;
+
         // 鱼鳍的终点，二阶贝塞尔曲线的终点
         PointF endPoint = calculatePoint(startPoint, finsLength, fishAngle - 180);
         //控制点
-        PointF controlPoint = calculatePoint(startPoint, finsLength * 1.8f,
-                isRight ? fishAngle - 115 : fishAngle + 115);
+//        PointF controlPoint = calculatePoint(startPoint, finsLength * 1.8f,
+//                isRight ? fishAngle - 115 : fishAngle + 115);
+
+        // 鱼鳍变化
+        float controlFishCrossLength = (float) (finsLength * 1.8f * Math.cos(Math.toRadians(65)));
+        PointF controlFishCrossPoint = calculatePoint(startPoint, controlFishCrossLength, fishAngle - 180);
+        float lineLength = (float) Math.abs(Math.tan(Math.toRadians(controlAngle)) * headRadius);
+        float line = lineLength - finsValue;
+        PointF controlPoint = calculatePoint(controlFishCrossPoint, line, isRight ? (fishAngle - 90) : (fishAngle + 90));
+
         mPath.reset();
         mPath.moveTo(startPoint.x, startPoint.y);
         mPath.quadTo(controlPoint.x, controlPoint.y, endPoint.x, endPoint.y);
@@ -232,9 +283,33 @@ public class DrawableFish extends Drawable {
      * @param angle      起始点与终点的夹角
      * @return 终点的坐标
      */
-    private PointF calculatePoint(PointF startPoint, float length, float angle) {
+    public PointF calculatePoint(PointF startPoint, float length, float angle) {
         float daltaX = (float) (Math.cos(Math.toRadians(angle)) * length);
         float daltaY = (float) (Math.sin(Math.toRadians(angle - 180)) * length);
         return new PointF(daltaX + startPoint.x, daltaY + startPoint.y);
+    }
+
+    public PointF getMiddlePoint() {
+        return middlePoint;
+    }
+
+    public PointF getHeadPoint() {
+        return headPoint;
+    }
+
+    public float getHeadRadius() {
+        return headRadius;
+    }
+
+    public void setFrequence(float v) {
+        this.frequence = v;
+    }
+
+    public void setFinsValue(float finsValue) {
+        this.finsValue = finsValue;
+    }
+
+    public void setFishMainAngle(float fishMainAngle) {
+        this.fishMainAngle = fishMainAngle;
     }
 }
